@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>File Upload and Text Entry</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+        }
+
+        .container {
+            text-align: center;
+            width: 300px;
+            transition: transform 0.5s ease;
+        }
+
+        input {
+            display: block;
+            width: 100%;
+            margin: 10px 0;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        #message {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #28a745;
+            border-radius: 4px;
+            background-color: #d4edda;
+            color: #155724;
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="container">
+        <input id="fileInput" type="file" />
+        <input id="textInput" type="text" placeholder="Enter text here..." />
+        <div id="message">Received!</div>
+    </div>
+
+    <script>
+        const textInput = document.getElementById('textInput');
+        const fileInput = document.getElementById('fileInput');
+        const message = document.getElementById('message');
+        const container = document.getElementById('container');
+
+        function showReceivedMessage() {
+            container.style.transform = "translateY(-50px)"; // Moves entire container upwards
+            message.style.display = 'block'; // Shows the "Received!" message
+        }
+
+        textInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter') {
+                showReceivedMessage();
+            }
+        });
+
+        fileInput.addEventListener('change', showReceivedMessage);
+    </script>
+</body>
+</html>

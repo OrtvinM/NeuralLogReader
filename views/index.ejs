@@ -31,7 +31,7 @@
             border-radius: 4px;
         }
 
-        #message {
+        #message, #errorMessage {
             margin-top: 20px;
             padding: 10px;
             border: 1px solid #28a745;
@@ -40,6 +40,13 @@
             color: #155724;
             display: none;
             animation: fadeIn 0.5s ease;
+        }
+
+        #errorMessage {
+            margin-top: 10px;
+            border-color: #dc3545;
+            background-color: #f8d7da;
+            color: #721c24;
         }
 
         @keyframes fadeIn {
@@ -53,17 +60,26 @@
         <input id="fileInput" type="file" />
         <input id="textInput" type="text" placeholder="Enter text here..." />
         <div id="message">Received!</div>
+        <div id="errorMessage">0 errors detected</div>
     </div>
 
     <script>
         const textInput = document.getElementById('textInput');
         const fileInput = document.getElementById('fileInput');
         const message = document.getElementById('message');
+        const errorMessage = document.getElementById('errorMessage');
         const container = document.getElementById('container');
 
         function showReceivedMessage() {
-            container.style.transform = "translateY(-50px)"; // Moves entire container upwards
-            message.style.display = 'block'; // Shows the "Received!" message
+            container.style.transform = "translateY(-50px)"; 
+            message.style.display = 'block'; 
+
+            const text = textInput.value.toLowerCase();
+            const errorKeywords = ["fatal", "error", "issue"];
+            const errorCount = errorKeywords.filter(word => text.includes(word)).length;
+
+            errorMessage.textContent = `${errorCount} error(s) detected`;
+            errorMessage.style.display = 'block';
         }
 
         textInput.addEventListener('keypress', function(event) {

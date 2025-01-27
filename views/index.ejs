@@ -10,36 +10,55 @@
     <div class="container" id="container">
         <input id="fileInput" type="file" />
         <input id="textInput" type="text" placeholder="Enter text here..." />
-        <div id="message">Received!</div>
-        <div id="errorMessage">0 errors detected</div>
+        <div id="message" style="display: none;">Received!</div>
+        <div id="errorMessage" style="display: none;">0 errors detected</div>
     </div>
-
     <script>
-        const textInput = document.getElementById('textInput');
-        const fileInput = document.getElementById('fileInput');
-        const message = document.getElementById('message');
-        const errorMessage = document.getElementById('errorMessage');
-        const container = document.getElementById('container');
+        document.addEventListener('DOMContentLoaded', function () {
+            const textInput = document.getElementById('textInput');
+            const fileInput = document.getElementById('fileInput');
+            const message = document.getElementById('message');
+            const errorMessage = document.getElementById('errorMessage');
+            const container = document.getElementById('container');
 
-        function showReceivedMessage() {
-            container.style.transform = "translateY(-50px)"; 
-            message.style.display = 'block'; 
+            function showReceivedMessage(text) {
+                container.style.transform = "translateY(-50px)";
+                message.style.display = 'block';
 
-            const text = textInput.value.toLowerCase();
-            const errorKeywords = ["fatal", "error", "issue"];
-            const errorCount = errorKeywords.filter(word => text.includes(word)).length;
-
-            errorMessage.textContent = `${errorCount} error(s) detected`;
-            errorMessage.style.display = 'block';
-        }
-
-        textInput.addEventListener('keypress', function(event) {
-            if (event.key === 'Enter') {
-                showReceivedMessage();
+                fetch('/detect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ text })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    errorMessage.textContent = `${data.errorCount} error(s) detected`;
+                    errorMessage.style.display = 'block';
+                })
+                .catch(err => {
+                    console.error('Error:', err);
+                });
             }
-        });
 
-        fileInput.addEventListener('change', showReceivedMessage);
+            textInput.addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    showReceivedMessage(textInput.value);
+                }
+            });
+
+            fileInput.addEventListener('change', function() {
+                const file = fileInput.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        showReceivedMessage(e.target.result);
+                    };
+                    reader.readAsText(file);
+                }
+            });
+        });
     </script>
 </body>
 </html>

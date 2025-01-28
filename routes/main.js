@@ -3,7 +3,7 @@ const router = express.Router();
 
 // Route to render the main page
 router.get('/', (req, res) => {
-    res.render('index'); // Ensure "index.ejs" is in the "views" folder
+    res.render('index'); 
 });
 
 // Handle /detect route locally
@@ -14,7 +14,7 @@ router.post('/detect', (req, res) => {
         return res.status(400).json({ message: 'No text provided', errorCount: 0 });
     }
 
-    // Error detection logic (previously in Python)
+    // Error detection logic
     const errorKeywords = ["fatal", "error", "issue"];
     const errorCount = errorKeywords.reduce((count, keyword) => {
         return count + (text.toLowerCase().split(keyword).length - 1);

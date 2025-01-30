@@ -8,7 +8,7 @@
 </head>
 <body>
     <div class="container" id="container">
-        <input id="fileInput" type="file" />
+        <input id="fileInput" type="file" accept=".txt,.csv,.log,.json,.xml,.yaml,.yml,.md" />
         <input id="textInput" type="text" placeholder="Enter text here..." />
         <div id="message" style="display: none;">Received!</div>
         <div id="errorMessage" style="display: none;">0 errors detected</div>
@@ -20,45 +20,75 @@
             const message = document.getElementById('message');
             const errorMessage = document.getElementById('errorMessage');
             const container = document.getElementById('container');
-
-            function showReceivedMessage(text) {
+    
+            function showReceivedMessage(url, body) {
                 container.style.transform = "translateY(-50px)";
                 message.style.display = 'block';
-
-                fetch('/detect', {
+    
+                fetch(url, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ text })
+                    body: JSON.stringify(body), // Correctly stringify the payload
                 })
-                .then(response => response.json())
-                .then(data => {
-                    errorMessage.textContent = `${data.errorCount} error(s) detected`;
-                    errorMessage.style.display = 'block';
-                })
-                .catch(err => {
-                    console.error('Error:', err);
-                });
+                    .then((response) => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+                        return response.json();
+                    })
+                    .then((data) => {
+                        errorMessage.textContent = `${data.errorCount} error(s) detected`;
+                        errorMessage.style.display = 'block';
+                    })
+                    .catch((err) => {
+                        console.error('Error:', err);
+                        errorMessage.textContent = `Error: Unable to process input.`;
+                        errorMessage.style.display = 'block';
+                    });
             }
-
-            textInput.addEventListener('keypress', function(event) {
+    
+            textInput.addEventListener('keypress', function (event) {
                 if (event.key === 'Enter') {
-                    showReceivedMessage(textInput.value);
+                    const text = textInput.value;
+                    if (text.trim() === '') {
+                        errorMessage.textContent = `Please enter valid text.`;
+                        errorMessage.style.display = 'block';
+                        return;
+                    }
+                    showReceivedMessage('/detect', { text });
                 }
             });
-
-            fileInput.addEventListener('change', function() {
+    
+            fileInput.addEventListener('change', function () {
                 const file = fileInput.files[0];
                 if (file) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        showReceivedMessage(e.target.result);
-                    };
-                    reader.readAsText(file);
+                    const formData = new FormData();
+                    formData.append('file', file);
+    
+                    fetch('/detect-file', {
+                        method: 'POST',
+                        body: formData,
+                    })
+                        .then((response) => {
+                            if (!response.ok) {
+                                throw new Error(`HTTP error! status: ${response.status}`);
+                            }
+                            return response.json();
+                        })
+                        .then((data) => {
+                            errorMessage.textContent = `${data.errorCount} error(s) detected`;
+                            errorMessage.style.display = 'block';
+                        })
+                        .catch((err) => {
+                            console.error('Error:', err);
+                            errorMessage.textContent = `Error: Unable to process file.`;
+                            errorMessage.style.display = 'block';
+                        });
                 }
             });
         });
-    </script>
+    </script>        
 </body>
 </html>

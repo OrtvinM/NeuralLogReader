@@ -9,7 +9,7 @@ const upload = multer({ dest: 'uploads/' });
 
 // Route to render the main page
 router.get('/', (req, res) => {
-    res.render('index'); // Ensure "index.ejs" is in the "views" folder
+    res.render('index'); 
 });
 
 router.post('/detect', (req, res) => {
@@ -47,13 +47,13 @@ router.post('/detect', (req, res) => {
         }
     });
 
-    pythonProcess.stdin.write(text); // Pass text to Python script
+    pythonProcess.stdin.write(text);
     pythonProcess.stdin.end();
 });
 
 // Execute Python script for file input
 router.post('/detect-file', upload.single('file'), async (req, res) => {
-    const filePath = req.file.path; // Path to the uploaded file
+    const filePath = req.file.path; 
 
     const pythonProcess = spawn('python', ['python/app.py', '--file', filePath]);
 

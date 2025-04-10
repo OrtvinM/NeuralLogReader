@@ -9,3 +9,4 @@ npm install ejs
 npm install node
 
 pip install flask
+pip install nltk

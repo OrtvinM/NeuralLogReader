@@ -8,6 +8,7 @@ app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(express.static(__dirname + '/public'));
+app.use('/downloads', express.static(__dirname + '/python/processing/results'));
 
 app.locals.siteData = { siteName: "Log Reader" };
 

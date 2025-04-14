@@ -1,49 +1,71 @@
 import sys
+import os
 import json
-from processing.error_detection import process_text_input, process_file_input
-from processing.data_normalization import clean_text
+import tempfile
+from processing.error_detection import detect_errors
+from processing.data_normalization import normalize_log_file
 
 def main():
-    """
-    Handles incoming requests from Node.js and routes them to the appropriate function.
-    """
     try:
         request_data = sys.stdin.read().strip()
 
         if not request_data:
-            print(json.dumps({"message": "No input received", "errorCount": 0, "normalizedText": "Error: No input provided."}))
-            return
+            result = {
+                "message": "No input received",
+                "errorCount": 0,
+                "normalizedText": "Error: No input provided."
+            }
+        else:
+            request_json = json.loads(request_data)
+            result = {
+                "message": "Invalid request format",
+                "errorCount": 0,
+                "normalizedText": "Error: No normalized text generated."
+            }
 
-        request_json = json.loads(request_data)
-        result = {"message": "Invalid request format", "errorCount": 0, "normalizedText": "Error: No normalized text generated."}  # Default response
+            if 'text' in request_json:
+                raw_text = request_json['text']
+                error_count = detect_errors(raw_text)
+                result = {
+                    "message": "Text processed!",
+                    "errorCount": error_count,
+                    "normalizedText": raw_text
+                }
 
-        if 'text' in request_json:
-            raw_text = request_json['text']
-            normalized_text = clean_text(raw_text)
+            elif 'file' in request_json and 'logType' in request_json:
+                file_path = request_json['file']
+                log_type = request_json['logType']
 
-            # Ensure we return a proper JSON response
-            result = process_text_input(normalized_text)
-            result["normalizedText"] = normalized_text
+                normalized_entries, output_path = normalize_log_file(file_path, log_type)
+                normalized_text = json.dumps(normalized_entries, default=str)
 
-        elif 'file' in request_json:
-            file_path = request_json['file']
+                # Count how many messages contain common error keywords
+                from processing.error_detection import detect_errors
+                combined_text = ' '.join(entry["message"] for entry in normalized_entries if "message" in entry)
+                error_count = detect_errors(combined_text)
 
-            with open(file_path, 'r', encoding='utf-8') as file:
-                raw_text = file.read()
-                normalized_text = clean_text(raw_text)
+                result = {
+                    "message": "File processed!",
+                    "errorCount": error_count,
+                    "normalizedText": normalized_text
+                }
 
-            result = process_file_input(file_path)
-            result["normalizedText"] = normalized_text  # Ensure normalized text is returned
-
-        # Print ONLY the JSON response (no debug statements)
-        print(json.dumps(result))
+        # Save result to a temp file and return the path
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as tmp:
+            json.dump(result, tmp, ensure_ascii=False, indent=2)
+            print(tmp.name)  # ONLY output the filename
 
     except Exception as e:
-        print(json.dumps({
+        fallback = {
             "message": f"Error processing request: {str(e)}",
             "errorCount": 0,
-            "normalizedText": "Error: Exception occurred."
-        }))
+            "normalizedText": "Error: Exception occurred.",
+            "downloadPath": None
+        }
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".json", mode="w", encoding="utf-8") as tmp:
+            json.dump(fallback, tmp, ensure_ascii=False, indent=2)
+            print(tmp.name)
 
 if __name__ == '__main__':
     main()

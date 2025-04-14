@@ -15,66 +15,74 @@ router.get('/', (req, res) => {
 // Handle file uploads and pass them to Python for processing
 router.post('/detect-file', upload.single('file'), async (req, res) => {
     if (!req.file) {
-        return res.status(400).json({ message: 'No file uploaded', errorCount: 0, normalizedText: "Error: No file provided." });
+        return res.status(400).json({
+            message: 'No file uploaded',
+            errorCount: 0,
+            normalizedText: "Error: No file provided."
+        });
     }
 
     const filePath = req.file.path;
     const originalFileName = req.file.originalname;
 
-    fs.readFile(filePath, 'utf8', (err, data) => {
-        if (err) {
-            console.error(`Error reading file: ${err}`);
-            return res.status(500).json({ message: 'Error reading file', errorCount: 0, normalizedText: "Error: File could not be read." });
-        }
+    const pythonProcess = spawn('python', ['python/main.py']);
 
-        console.log(`Uploaded File: ${originalFileName}`);
-        console.log("File Contents (Raw):");
-        console.log(data);
+    let output = '';
+    let errorOutput = '';
 
-        const pythonProcess = spawn('python', ['python/main.py']);
+    // Send file and log type to Python
+    pythonProcess.stdin.write(JSON.stringify({
+        file: filePath,
+        logType: originalFileName.toLowerCase().includes("ssh") ? "openssh" : "apache"
+    }) + "\n");
+    pythonProcess.stdin.end();
 
-        let output = '';
-        let errorOutput = '';
+    pythonProcess.stdout.on('data', (data) => {
+        output += data.toString();
+    });
 
-        pythonProcess.stdin.write(JSON.stringify({ file: filePath }) + "\n");
-        pythonProcess.stdin.end();
+    pythonProcess.stderr.on('data', (data) => {
+        errorOutput += data.toString();
+    });
 
-        pythonProcess.stdout.on('data', (data) => {
-            output += data.toString();
-        });
+    pythonProcess.on('close', (code) => {
+        fs.unlinkSync(filePath); // Clean up the uploaded file
 
-        pythonProcess.stderr.on('data', (data) => {
-            errorOutput += data.toString();
-        });
+        if (code === 0) {
+            try {
+                const resultPath = output.trim();
+                const resultContent = fs.readFileSync(resultPath, 'utf-8');
+                const result = JSON.parse(resultContent);
+                fs.unlinkSync(resultPath); // Clean up temp result file
 
-        pythonProcess.on('close', (code) => {
-            fs.unlinkSync(filePath);
-
-            if (code === 0) {
-                try {
-                    // Ensure we only parse valid JSON
-                    output = output.trim();
-                    if (!output.startsWith('{')) {
-                        console.error("Invalid JSON received from Python:", output);
-                        return res.status(500).json({ message: "Invalid JSON response from Python", errorCount: 0, normalizedText: "Error: Unexpected Python output." });
-                    }
-
-                    const result = JSON.parse(output);
-                    console.log("File Contents (Normalized):", result.normalizedText);
-                    res.json(result);
-                } catch (e) {
-                    console.error('Error parsing Python output:', e, "Output received:", output);
-                    res.status(500).json({ message: 'Error parsing Python output', errorCount: 0, normalizedText: "Error in parsing output." });
-                }
-            } else {
-                console.error(`Python script error: ${errorOutput}`);
-                res.status(500).json({ message: `Python script error: ${errorOutput}`, errorCount: 0, normalizedText: "Python processing failed." });
+                res.json({
+                    ...result,
+                    downloadPath: result.downloadPath?.replace(/^.*results[\\/]/, 'downloads/')
+                });
+            } catch (e) {
+                console.error("Error reading/parsing Python output:", e);
+                res.status(500).json({
+                    message: 'Failed to parse result from Python',
+                    errorCount: 0,
+                    normalizedText: "Error: Python output could not be parsed."
+                });
             }
-        });
+        } else {
+            console.error(`Python script error: ${errorOutput}`);
+            res.status(500).json({
+                message: `Python script error: ${errorOutput}`,
+                errorCount: 0,
+                normalizedText: "Python processing failed."
+            });
+        }
+    });
 
-        pythonProcess.on('error', (err) => {
-            console.error(`Failed to start Python process: ${err.message}`);
-            res.status(500).json({ message: 'Failed to start Python process', errorCount: 0, normalizedText: "Python execution failed." });
+    pythonProcess.on('error', (err) => {
+        console.error(`Failed to start Python process: ${err.message}`);
+        res.status(500).json({
+            message: 'Failed to start Python process',
+            errorCount: 0,
+            normalizedText: "Python execution failed."
         });
     });
 });

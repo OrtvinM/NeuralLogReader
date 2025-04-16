@@ -6,6 +6,8 @@ from collections import Counter
 from tokenizer_pipeline import LogTokenizer
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+import re
 
 def highlight_syntax(text_widget):
     # Define tag colors
@@ -45,14 +47,15 @@ def highlight_syntax(text_widget):
                     start_idx = end_pos
 
 def open_file():
-    print("open_file() is running")
+    # print("open_file() is running")
     file_path = filedialog.askopenfilename(filetypes=[("Log files", "*.log"), ("All files", "*.*")])
     if not file_path:
         return
 
     with open(file_path, 'r') as f:
         content = f.read()
-
+    raw_lines = content.splitlines()
+    
     filename = file_path.split("/")[-1]
 
     # ───────────── Parent Tab for this log file ─────────────
@@ -86,15 +89,15 @@ def open_file():
     tokenizer = LogTokenizer(max_length=20)
     tokenizer.fit(lines)
     sequences = tokenizer.transform(lines)
-    create_insights_tab(lines, filename, sub_notebook)
+    create_insights_tab(lines, filename, sub_notebook, raw_lines)
 
     # Tokenization debug paster
     # print(f"\n🔍 Tokenized Output for {filename}:")
     # for line_seq in sequences:
     #     print(line_seq)
 
-def create_insights_tab(normalized_lines, filename, sub_notebook):
-    print("create_insights_tab() is running")
+def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines):
+    # print("create_insights_tab() is running")
     lines = normalized_lines
 
     # Create sub-notebook (nested tabs))
@@ -134,33 +137,72 @@ def create_insights_tab(normalized_lines, filename, sub_notebook):
     for token, count in placeholder_counts.items():
         Label(frame2, text=f"{token}: {count}").pack(anchor='w')
 
-    # Bottom-left: Timestamp timeline graph
+    # Bottom-left: Adaptive Timeline Graph
     frame3 = Frame(graph_tab, bd=2, relief='groove')
     frame3.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
     Label(frame3, text="🕒 Timestamp Frequency", font=("Arial", 12, 'bold')).pack()
 
-    time_bins = []
-    for i, line in enumerate(lines):
-        if "<timestamp>" in line:
-            time_bins.append(i // 20)
+    timestamp_pattern = re.compile(
+        r"\b(?:sun|mon|tue|wed|thu|fri|sat)? ?[a-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}(?: \d{4})?\b",
+        re.IGNORECASE
+    )
 
-    bin_counts = Counter(time_bins)
-    x_vals = sorted(bin_counts.keys())
-    y_vals = [bin_counts[x] for x in x_vals]
+    parsed_timestamps = []
 
-    if x_vals:
-        fig2, ax2 = plt.subplots(figsize=(4, 2))
+    for line in raw_lines:
+        match = timestamp_pattern.search(line)
+        if match:
+            ts = match.group()
+            try:
+                # Apache style: Sun Dec 04 04:47:44 2005
+                dt = datetime.strptime(ts.strip(), "%a %b %d %H:%M:%S %Y")
+            except ValueError:
+                try:
+                    # SSH style: Dec 10 06:55:46
+                    dt = datetime.strptime(ts.strip(), "%b %d %H:%M:%S")
+                    dt = dt.replace(year=2000)
+                except ValueError:
+                    continue
+            parsed_timestamps.append(dt)
+
+    if not parsed_timestamps:
+        Label(frame3, text="No valid timestamps found in log.").pack()
+    else:
+        parsed_timestamps.sort()
+        start_time = parsed_timestamps[0]
+        end_time = parsed_timestamps[-1]
+        total_range = end_time - start_time
+
+        # Decide bin size
+        if total_range < timedelta(hours=1):
+            bin_format = "%Y-%m-%d %H:%M"  # group by minute
+            bin_label = "Minute"
+            round_to = lambda dt: dt.replace(second=0)
+        elif total_range < timedelta(days=1):
+            bin_format = "%Y-%m-%d %H:00"
+            bin_label = "Hour"
+            round_to = lambda dt: dt.replace(minute=0, second=0)
+        else:
+            bin_format = "%Y-%m-%d"
+            bin_label = "Day"
+            round_to = lambda dt: dt.replace(hour=0, minute=0, second=0)
+
+        time_bins = [round_to(dt) for dt in parsed_timestamps]
+        bin_counts = Counter(time_bins)
+        x_vals = sorted(bin_counts.keys())
+        y_vals = [bin_counts[x] for x in x_vals]
+
+        fig2, ax2 = plt.subplots(figsize=(4.5, 2.5))
         ax2.plot(x_vals, y_vals, marker='o')
-        ax2.set_title("Timestamps by Log Block")
-        ax2.set_xlabel("Block (20 lines each)")
-        ax2.set_ylabel("Timestamp Occurrences")
+        ax2.set_title(f"Log Entry Frequency by {bin_label}")
+        ax2.set_xlabel(bin_label)
+        ax2.set_ylabel("Entries")
         ax2.grid(True)
+        fig2.autofmt_xdate()
 
         canvas2 = FigureCanvasTkAgg(fig2, master=frame3)
         canvas2.draw()
         canvas2.get_tk_widget().pack(fill='both', expand=True)
-    else:
-        Label(frame3, text="No timestamps found in log.").pack()
 
     # Bottom-right: Pie chart of placeholder counts
     frame4 = Frame(graph_tab, bd=2, relief='groove')

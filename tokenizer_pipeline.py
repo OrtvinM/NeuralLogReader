@@ -6,8 +6,10 @@ from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 import pickle
 
+# num_words cap 10,000 for before rimworld.logs
+# num_words cap 5,000 for more rimworld.log files
 class LogTokenizer:
-    def __init__(self, num_words=10000, oov_token="<OOV>", max_length=20):
+    def __init__(self, num_words=5000, oov_token="<OOV>", max_length=20):
         self.tokenizer = Tokenizer(num_words=num_words, oov_token=oov_token)
         self.max_length = max_length
         self.fitted = False
@@ -38,26 +40,24 @@ class LogTokenizer:
 
 from tokenizer_pipeline import LogTokenizer
 
-# Sample normalized log lines (could come from your clean tab)
+# Sample normalized log lines 
 sample_logs = [
     "<timestamp> <error> mod_jk child <id> workerenv in error state <id>",
     "<timestamp> <notice> jk2_init found child <id> in scoreboard slot <id>",
     "<timestamp> <error> connection closed by <ip> port <port>"
 ]
 
-# Create tokenizer and fit it
+# Create tokenizer
 tokenizer = LogTokenizer(max_length=12)
 tokenizer.fit(sample_logs)
-
-# Transform logs into sequences
 X = tokenizer.transform(sample_logs)
 
-# Print the results
-print("Tokenized Sequences:")
-print(X)
+# # Printing of the tokenizer results
+# print("Tokenized Sequences:")
+# print(X)
 
-print("\nVocabulary:")
-print(tokenizer.get_vocab())
+# print("\nVocabulary:")
+# print(tokenizer.get_vocab())
 
 # Save tokenizer for later reuse
 tokenizer.save("tokenizer.pkl")

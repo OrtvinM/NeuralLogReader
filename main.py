@@ -18,6 +18,11 @@ def highlight_syntax(text_widget):
     text_widget.tag_config("port", foreground="orange")
     text_widget.tag_config("path", foreground="darkgray")
     text_widget.tag_config("id", foreground="gray")
+    text_widget.tag_config("engine_version", foreground="darkgreen")
+    text_widget.tag_config("mod_patch", foreground="teal")
+    text_widget.tag_config("duplicate_mod", foreground="orange")
+    text_widget.tag_config("dll_fail", foreground="red")
+    text_widget.tag_config("prepatcher_event", foreground="blue")
 
     content = text_widget.get("1.0", tk.END)
 
@@ -28,6 +33,11 @@ def highlight_syntax(text_widget):
     lines = content.split("\n")
     for i, line in enumerate(lines, start=1):
         for token, tag in [
+            ("<engine_version>", "engine_version"),
+            ("<mod_patch>", "mod_patch"),
+            ("<duplicate_mod>", "duplicate_mod"),
+            ("<dll_fail>", "dll_fail"),
+            ("<prepatcher_event>", "prepatcher_event"),
             ("<error>", "error"),
             ("<user>", "user"),
             ("<ip>", "ip"),
@@ -48,14 +58,23 @@ def highlight_syntax(text_widget):
 
 def open_file():
     # print("open_file() is running")
-    file_path = filedialog.askopenfilename(filetypes=[("Log files", "*.log"), ("All files", "*.*")])
+
+    file_path = filedialog.askopenfilename(
+        filetypes=[("Log files", "*.log"), ("All files", "*.*")]
+    )
     if not file_path:
         return
-
-    with open(file_path, 'r') as f:
-        content = f.read()
-    raw_lines = content.splitlines()
     
+    with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
+        content = f.read()
+
+    mod_ids = set()
+    for line in content.splitlines():
+        match = re.search(r"(?:/|\\)294100(?:/|\\)(\d{9,10})", line)
+        if match:
+            mod_ids.add(match.group(1))
+
+    raw_lines = content.splitlines()
     filename = file_path.split("/")[-1]
 
     # ───────────── Parent Tab for this log file ─────────────
@@ -86,19 +105,24 @@ def open_file():
 
     # Tokenize and print to terminal
     lines = normalized.split("\n")
+    # print("Normalized preview:")
+    # for l in lines[:10]:
+    #     print(l)
     tokenizer = LogTokenizer(max_length=20)
     tokenizer.fit(lines)
     sequences = tokenizer.transform(lines)
-    create_insights_tab(lines, filename, sub_notebook, raw_lines)
+    create_insights_tab(lines, filename, sub_notebook, raw_lines, mod_ids)
 
     # Tokenization debug paster
     # print(f"\n🔍 Tokenized Output for {filename}:")
     # for line_seq in sequences:
     #     print(line_seq)
+    print("MOD IDS DETECTED:", mod_ids)
 
-def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines):
+def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines, mod_ids):
     # print("create_insights_tab() is running")
     lines = normalized_lines
+    is_rimworld_log = any(id_.isdigit() and len(id_) >= 9 for id_ in mod_ids)
 
     # Create sub-notebook (nested tabs))
     sub_notebook.pack(expand=1, fill='both')
@@ -106,26 +130,43 @@ def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines):
     # Graph tab inside sub-notebook
     graph_tab = ttk.Frame(sub_notebook)
     graph_tab.grid_rowconfigure((0, 1), weight=1)
-    graph_tab.grid_columnconfigure((0, 1), weight=1)
+    graph_tab.grid_columnconfigure((0, 1, 2), weight=1)
     sub_notebook.add(graph_tab, text="Graph")
 
-    # Top-left: Log Summary + Most Common Lines
+    # Top-left: Log Summary (clean + scrollable)
     frame1 = Frame(graph_tab, bd=2, relief='groove')
     frame1.grid(row=0, column=0, sticky='nsew', padx=5, pady=5)
 
-    Label(frame1, text="📄 Log Summary", font=("Arial", 12, 'bold')).pack(anchor='w')
-    Label(frame1, text=f"Total Lines: {len(lines)}").pack(anchor='w')
-    Label(frame1, text=f"Unique Lines: {len(set(lines))}").pack(anchor='w')
-    Label(frame1, text="Most Common Lines:", font=("Arial", 10, 'bold')).pack(anchor='w')
-    line_freq = Counter(lines)
-    for line, freq in line_freq.most_common(5):
-        Label(frame1, text=f"[{freq}x] {line[:80]}").pack(anchor='w')
+    canvas = tk.Canvas(frame1)
+    scrollbar = tk.Scrollbar(frame1, orient="vertical", command=canvas.yview)
+    scrollbar.pack(side="right", fill="y")
+    canvas.pack(side="left", fill="both", expand=True)
 
-    # Top-right: Placeholder token counts
+    scrollable_frame = Frame(canvas)
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    # Summary labels
+    Label(scrollable_frame, text="📄 Log Summary", font=("Arial", 12, 'bold')).pack(anchor='w')
+    Label(scrollable_frame, text=f"Total Lines: {len(lines)}", font=("Arial", 10)).pack(anchor='w')
+    Label(scrollable_frame, text=f"Unique Lines: {len(set(lines))}", font=("Arial", 10)).pack(anchor='w')
+    Label(scrollable_frame, text=f"Mods Detected: {len(mod_ids)}", font=("Arial", 10)).pack(anchor='w')
+
+    # Top-right: Token count
     frame2 = Frame(graph_tab, bd=2, relief='groove')
     frame2.grid(row=0, column=1, sticky='nsew', padx=5, pady=5)
 
-    placeholder_tokens = ["<error>", "<notice>", "<timestamp>", "<ip>", "<port>", "<id>", "<user>"]
+    placeholder_tokens = [
+        "<error>", "<notice>", "<timestamp>", "<ip>", "<port>", "<user>",
+        "<duplicate_mod>", "<mod_missing_id>",
+        "<mod_patch>", "<dll_fail>", "<prepatcher_event>", "<mod_config_warning>", "<mod_id>"
+    ]
     placeholder_counts = Counter()
 
     for line in lines:
@@ -133,81 +174,142 @@ def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines):
             if token in line:
                 placeholder_counts[token] += 1
 
-    Label(frame2, text="📌 Placeholder Counts", font=("Arial", 12, 'bold')).pack(anchor='w')
+    Label(frame2, text="Placeholder Counts", font=("Arial", 12, 'bold')).pack(anchor='w')
     for token, count in placeholder_counts.items():
         Label(frame2, text=f"{token}: {count}").pack(anchor='w')
 
-    # Bottom-left: Adaptive Timeline Graph
-    frame3 = Frame(graph_tab, bd=2, relief='groove')
-    frame3.grid(row=1, column=0, sticky='nsew', padx=5, pady=5)
-    Label(frame3, text="🕒 Timestamp Frequency", font=("Arial", 12, 'bold')).pack()
+    # Middle-top: Workshop IDs
+    frame_mods = Frame(graph_tab, bd=2, relief='groove')
+    frame_mods.grid(row=0, column=2, sticky='nsew', padx=5, pady=5)
 
-    timestamp_pattern = re.compile(
-        r"\b(?:sun|mon|tue|wed|thu|fri|sat)? ?[a-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}(?: \d{4})?\b",
-        re.IGNORECASE
-    )
+    Label(frame_mods, text="🧩 Workshop Mod IDs", font=("Arial", 12, 'bold')).pack(anchor='w')
 
-    parsed_timestamps = []
-
-    for line in raw_lines:
-        match = timestamp_pattern.search(line)
-        if match:
-            ts = match.group()
-            try:
-                # Apache style: Sun Dec 04 04:47:44 2005
-                dt = datetime.strptime(ts.strip(), "%a %b %d %H:%M:%S %Y")
-            except ValueError:
-                try:
-                    # SSH style: Dec 10 06:55:46
-                    dt = datetime.strptime(ts.strip(), "%b %d %H:%M:%S")
-                    dt = dt.replace(year=2000)
-                except ValueError:
-                    continue
-            parsed_timestamps.append(dt)
-
-    if not parsed_timestamps:
-        Label(frame3, text="No valid timestamps found in log.").pack()
+    if mod_ids:
+        for mod_id in sorted(mod_ids):
+            Label(frame_mods, text=f"• {mod_id}").pack(anchor='w')
     else:
-        parsed_timestamps.sort()
-        start_time = parsed_timestamps[0]
-        end_time = parsed_timestamps[-1]
-        total_range = end_time - start_time
+        Label(frame_mods, text="No mods detected.").pack(anchor='w')
 
-        # Decide bin size
-        if total_range < timedelta(hours=1):
-            bin_format = "%Y-%m-%d %H:%M"  # group by minute
-            bin_label = "Minute"
-            round_to = lambda dt: dt.replace(second=0)
-        elif total_range < timedelta(days=1):
-            bin_format = "%Y-%m-%d %H:00"
-            bin_label = "Hour"
-            round_to = lambda dt: dt.replace(minute=0, second=0)
+    # Bottom-left: DLL Fail Heat map
+    frame3 = Frame(graph_tab, bd=2, relief='groove')
+    frame3.grid(row=1, column=0, columnspan=2, sticky='nsew', padx=5, pady=5)
+
+    if is_rimworld_log:
+        print("RimWorld log detected — using DLL Fail Heatmap")
+        Label(frame3, text="🧨 DLL Fail Heatmap", font=("Arial", 12, 'bold')).pack()
+
+        dll_fail_bins = []
+        for i, line in enumerate(raw_lines):
+            if "fallback handler could not load library" in line.lower():
+                dll_fail_bins.append(i // 20)
+
+        bin_counts = Counter(dll_fail_bins)
+        x_vals = sorted(bin_counts)
+        y_vals = [bin_counts[x] for x in x_vals]
+
+        if x_vals:
+            fig3, ax3 = plt.subplots(figsize=(4, 2))
+            ax3.plot(x_vals, y_vals)
+            ax3.set_title("DLL Load Failures by Log Block")
+            ax3.set_xlabel("Block (20 lines each)")
+            ax3.set_ylabel("Failures")
+            ax3.grid(True)
+
+            canvas3 = FigureCanvasTkAgg(fig3, master=frame3)
+            canvas3.draw()
+            canvas3.get_tk_widget().pack(fill='both', expand=True)
         else:
-            bin_format = "%Y-%m-%d"
-            bin_label = "Day"
-            round_to = lambda dt: dt.replace(hour=0, minute=0, second=0)
+            Label(frame3, text="No DLL failures detected.").pack()
 
-        time_bins = [round_to(dt) for dt in parsed_timestamps]
+    else:
+        Label(frame3, text="Timestamp Frequency", font=("Arial", 12, 'bold')).pack()
+
+        time_bins = []
+        for i, line in enumerate(lines):
+            if "<timestamp>" in line:
+                time_bins.append(i // 20)
+
         bin_counts = Counter(time_bins)
         x_vals = sorted(bin_counts.keys())
         y_vals = [bin_counts[x] for x in x_vals]
 
-        fig2, ax2 = plt.subplots(figsize=(4.5, 2.5))
-        ax2.plot(x_vals, y_vals, marker='o')
-        ax2.set_title(f"Log Entry Frequency by {bin_label}")
-        ax2.set_xlabel(bin_label)
-        ax2.set_ylabel("Entries")
-        ax2.grid(True)
-        fig2.autofmt_xdate()
+        if x_vals:
+            fig3, ax3 = plt.subplots(figsize=(4, 2))
+            ax3.plot(x_vals, y_vals)
+            ax3.set_ylim(bottom=0)
+            ax3.grid(True)
+            ax3.set_title("Timestamps by Log Block")
+            ax3.set_xlabel("Block (20 lines each)")
+            ax3.set_ylabel("Timestamp Occurrences")
+            ax3.grid(True)
 
-        canvas2 = FigureCanvasTkAgg(fig2, master=frame3)
-        canvas2.draw()
-        canvas2.get_tk_widget().pack(fill='both', expand=True)
+            canvas3 = FigureCanvasTkAgg(fig3, master=frame3)
+            canvas3.draw()
+            canvas3.get_tk_widget().pack(fill='both', expand=True)
+        else:
+            Label(frame3, text="No timestamps found in log.").pack()
+
+    if not is_rimworld_log:
+        timestamp_pattern = re.compile(
+            r"\b(?:sun|mon|tue|wed|thu|fri|sat)? ?[a-z]{3} \d{1,2} \d{2}:\d{2}:\d{2}(?: \d{4})?\b",
+            re.IGNORECASE
+        )
+
+        parsed_timestamps = []
+
+        for line in raw_lines:
+            match = timestamp_pattern.search(line)
+            if match:
+                ts = match.group()
+                try:
+                    dt = datetime.strptime(ts.strip(), "%a %b %d %H:%M:%S %Y")
+                except ValueError:
+                    try:
+                        dt = datetime.strptime(ts.strip(), "%b %d %H:%M:%S")
+                        dt = dt.replace(year=2000)
+                    except ValueError:
+                        continue
+                parsed_timestamps.append(dt)
+
+        if not parsed_timestamps:
+            Label(frame3, text="No valid timestamps found in log.").pack()
+        else:
+            parsed_timestamps.sort()
+            start_time = parsed_timestamps[0]
+            end_time = parsed_timestamps[-1]
+            total_range = end_time - start_time
+
+            if total_range < timedelta(hours=1):
+                bin_label = "Minute"
+                round_to = lambda dt: dt.replace(second=0)
+            elif total_range < timedelta(days=1):
+                bin_label = "Hour"
+                round_to = lambda dt: dt.replace(minute=0, second=0)
+            else:
+                bin_label = "Day"
+                round_to = lambda dt: dt.replace(hour=0, minute=0, second=0)
+
+            time_bins = [round_to(dt) for dt in parsed_timestamps]
+            bin_counts = Counter(time_bins)
+            x_vals = sorted(bin_counts.keys())
+            y_vals = [bin_counts[x] for x in x_vals]
+
+            fig2, ax2 = plt.subplots(figsize=(4.5, 2.5))
+            ax2.plot(x_vals, y_vals)
+            ax2.set_title(f"Log Entry Frequency by {bin_label}")
+            ax2.set_xlabel(bin_label)
+            ax2.set_ylabel("Entries")
+            ax2.grid(True)
+            fig2.autofmt_xdate()
+
+            canvas2 = FigureCanvasTkAgg(fig2, master=frame3)
+            canvas2.draw()
+            canvas2.get_tk_widget().pack(fill='both', expand=True)
 
     # Bottom-right: Pie chart of placeholder counts
     frame4 = Frame(graph_tab, bd=2, relief='groove')
-    frame4.grid(row=1, column=1, sticky='nsew', padx=5, pady=5)
-    Label(frame4, text="📊 Placeholder Distribution", font=("Arial", 12, 'bold')).pack()
+    frame4.grid(row=1, column=2, sticky='nsew', padx=5, pady=5)
+    Label(frame4, text="Placeholder Distribution", font=("Arial", 12, 'bold')).pack()
 
     labels = list(placeholder_counts.keys())
     sizes = list(placeholder_counts.values())

@@ -319,9 +319,9 @@ def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines, mod
         ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140)
         ax.axis('equal')
 
-        canvas = FigureCanvasTkAgg(fig, master=frame4)
-        canvas.draw()
-        canvas.get_tk_widget().pack(fill='both', expand=True)
+        pie_canvas = FigureCanvasTkAgg(fig, master=frame4)
+        pie_canvas.draw()
+        pie_canvas.get_tk_widget().pack(fill='both', expand=True)
     else:
         Label(frame4, text="No placeholders found to graph.").pack()
 

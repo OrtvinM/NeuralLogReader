@@ -7,6 +7,7 @@ from tokenizer_pipeline import LogTokenizer
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
+from log_compare import setup_log_comparison_tab
 import re
 
 def highlight_syntax(text_widget):
@@ -337,12 +338,27 @@ def on_closing():
 
 root.protocol("WM_DELETE_WINDOW", on_closing)
 
-# Upload Button
-upload_btn = tk.Button(root, text="Upload Log File", command=open_file)
+#top-level tab layout
+main_tabs = ttk.Notebook(root)
+main_tabs.pack(expand=1, fill="both")
+
+# Tab 1: Single Log View
+single_log_tab = ttk.Frame(main_tabs)
+main_tabs.add(single_log_tab, text="Single Log View")
+
+# Upload button inside Single Log View
+upload_btn = tk.Button(single_log_tab, text="Upload Log File", command=open_file)
 upload_btn.pack(pady=10)
 
-# Tabbed notebook for multi-file viewing
-tab_control = ttk.Notebook(root)
+# Sub-tabs for individual logs
+tab_control = ttk.Notebook(single_log_tab)
 tab_control.pack(expand=1, fill="both")
+
+# Tab 2: Log Comparison (for the delta engine – empty for now)
+compare_tab = ttk.Frame(main_tabs)
+main_tabs.add(compare_tab, text="Log Comparison")
+
+#Delta engine
+setup_log_comparison_tab(compare_tab)
 
 root.mainloop()

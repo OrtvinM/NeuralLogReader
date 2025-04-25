@@ -8,7 +8,12 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from log_compare import setup_log_comparison_tab
+from mod_extractor import extract_mod_ids_from_log, extract_error_mods
 import re
+
+mod_ids_loaded = set()
+mod_names_loaded = set()
+mod_names_in_errors = set()
 
 def highlight_syntax(text_widget):
     # Define tag colors
@@ -59,7 +64,7 @@ def highlight_syntax(text_widget):
 
 def open_file():
     # print("open_file() is running")
-
+    
     file_path = filedialog.askopenfilename(
         filetypes=[("Log files", "*.log"), ("All files", "*.*")]
     )
@@ -69,11 +74,8 @@ def open_file():
     with open(file_path, 'r', encoding='utf-8-sig', errors='replace') as f:
         content = f.read()
 
-    mod_ids = set()
-    for line in content.splitlines():
-        match = re.search(r"(?:/|\\)294100(?:/|\\)(\d{9,10})", line)
-        if match:
-            mod_ids.add(match.group(1))
+    mod_ids_loaded = extract_mod_ids_from_log(content)
+    print("MOD IDS DETECTED:", mod_ids_loaded)
 
     raw_lines = content.splitlines()
     filename = file_path.split("/")[-1]
@@ -112,18 +114,17 @@ def open_file():
     tokenizer = LogTokenizer(max_length=20)
     tokenizer.fit(lines)
     sequences = tokenizer.transform(lines)
-    create_insights_tab(lines, filename, sub_notebook, raw_lines, mod_ids)
+    create_insights_tab(lines, filename, sub_notebook, raw_lines, mod_ids_loaded)
 
     # Tokenization debug paster
     # print(f"\n🔍 Tokenized Output for {filename}:")
     # for line_seq in sequences:
     #     print(line_seq)
-    print("MOD IDS DETECTED:", mod_ids)
 
-def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines, mod_ids):
+def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines, mod_ids_loaded):
     # print("create_insights_tab() is running")
     lines = normalized_lines
-    is_rimworld_log = any(id_.isdigit() and len(id_) >= 9 for id_ in mod_ids)
+    is_rimworld_log = any(id_.isdigit() and len(id_) >= 9 for id_ in mod_ids_loaded)
 
     # Create sub-notebook (nested tabs))
     sub_notebook.pack(expand=1, fill='both')
@@ -157,7 +158,7 @@ def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines, mod
     Label(scrollable_frame, text="📄 Log Summary", font=("Arial", 12, 'bold')).pack(anchor='w')
     Label(scrollable_frame, text=f"Total Lines: {len(lines)}", font=("Arial", 10)).pack(anchor='w')
     Label(scrollable_frame, text=f"Unique Lines: {len(set(lines))}", font=("Arial", 10)).pack(anchor='w')
-    Label(scrollable_frame, text=f"Mods Detected: {len(mod_ids)}", font=("Arial", 10)).pack(anchor='w')
+    Label(scrollable_frame, text=f"Mods Potentially Involved: {len(mod_ids_loaded)}", font=("Arial", 10)).pack(anchor='w')
 
     # Top-right: Token count
     frame2 = Frame(graph_tab, bd=2, relief='groove')
@@ -183,10 +184,10 @@ def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines, mod
     frame_mods = Frame(graph_tab, bd=2, relief='groove')
     frame_mods.grid(row=0, column=2, sticky='nsew', padx=5, pady=5)
 
-    Label(frame_mods, text="🧩 Workshop Mod IDs", font=("Arial", 12, 'bold')).pack(anchor='w')
+    Label(frame_mods, text="Potential Culprit Mod IDs", font=("Arial", 12, 'bold')).pack(anchor='w')
 
-    if mod_ids:
-        for mod_id in sorted(mod_ids):
+    if mod_ids_loaded:
+        for mod_id in sorted(mod_ids_loaded):
             Label(frame_mods, text=f"• {mod_id}").pack(anchor='w')
     else:
         Label(frame_mods, text="No mods detected.").pack(anchor='w')
@@ -354,7 +355,7 @@ upload_btn.pack(pady=10)
 tab_control = ttk.Notebook(single_log_tab)
 tab_control.pack(expand=1, fill="both")
 
-# Tab 2: Log Comparison (for the delta engine – empty for now)
+# Tab 2: Log Comparison
 compare_tab = ttk.Frame(main_tabs)
 main_tabs.add(compare_tab, text="Log Comparison")
 

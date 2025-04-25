@@ -1,4 +1,7 @@
+from tkinterdnd2 import TkinterDnD
 import tkinter as tk
+import os
+import json
 from tkinter import filedialog, ttk, Toplevel, Label, Frame
 from tkinter.scrolledtext import ScrolledText
 from normalise import normalize_log 
@@ -61,6 +64,186 @@ def highlight_syntax(text_widget):
                     end_pos = f"{pos}+{len(token)}c"
                     text_widget.tag_add(tag, pos, end_pos)
                     start_idx = end_pos
+
+def setup_ml_trainer_tab(trainer_tab):
+    import tkinter as tk
+    from tkinter import Label, Frame, Listbox, Button, filedialog
+    from tkinterdnd2 import DND_FILES
+
+    normalized_logs = {}
+    uploaded_files = {} 
+
+    files_frame = Frame(trainer_tab)
+    files_frame.pack(side="left", fill="both", expand=True, padx=10, pady=10)
+
+    tag_frame = Frame(trainer_tab)
+    tag_frame.pack(side="right", fill="y", padx=10, pady=10)
+
+    Label(files_frame, text="Uploaded Logs", font=("Arial", 12, "bold")).pack(anchor="nw")
+
+    log_list = Listbox(files_frame, width=50, height=20, selectmode="extended")
+    log_list.pack(fill="both", expand=True)
+
+    selected_file_tags = {}
+    current_selected = tk.StringVar(value="")
+
+    tag_options = [
+        "Crash on Launch", "Crash Midgame", "Startup Errors",
+        "Map Gen Error", "Minor Errors", "Graphical Bug", "Performance",
+        "Mod Conflict", "Other", "Clean Log"
+    ]
+    tag_checks = {}
+
+    Label(tag_frame, text="Select Tags", font=("Arial", 12, "bold")).pack(anchor="nw")
+
+    for tag in tag_options:
+        var = tk.BooleanVar()
+        cb = tk.Checkbutton(tag_frame, text=tag, variable=var)
+        cb.pack(anchor="w")
+        tag_checks[tag] = var
+
+    def on_log_select(event):
+        selection = log_list.curselection()
+        if not selection:
+            return
+        filename = log_list.get(selection[0])
+        current_selected.set(filename)
+
+        # Load saved tags
+        active_tags = selected_file_tags.get(filename, [])
+        for tag, var in tag_checks.items():
+            var.set(tag in active_tags)
+        update_not_sure_bg()
+
+    def upload_logs():
+        try:
+            file_paths = filedialog.askopenfilenames(
+                filetypes=[("Log files", "*.log"), ("All files", "*.*")]
+            )
+            if not file_paths:
+                return  # Cancel pressed, do nothing
+
+            for path in file_paths:
+                filename = os.path.basename(path)
+                if filename not in log_list.get(0, tk.END):
+                    log_list.insert("end", filename)
+                    selected_file_tags[filename] = []
+                    uploaded_files[filename] = path
+
+        except Exception as e:
+            print(f"Upload failed: {e}")
+
+    def drop_handler(event):
+        dropped_files = trainer_tab.tk.splitlist(event.data)
+        for path in dropped_files:
+            if path.lower().endswith(".log"):
+                filename = path.split("/")[-1]
+                if filename not in log_list.get(0, tk.END):
+                    log_list.insert("end", filename)
+                    selected_file_tags[filename] = []
+
+    def confirm_tags():
+        selections = log_list.curselection()
+        if not selections:
+            print("No log file selected.")
+            return
+
+        selected = [tag for tag, var in tag_checks.items() if var.get()]
+        if "Not Sure" in selected:
+            selected = [t for t in selected if t != "Not Sure"] + ["Not Sure"]
+
+        for i in selections:
+            filename = log_list.get(i)
+            selected_file_tags[filename] = selected
+
+            # Normalize content
+            full_path = uploaded_files.get(filename)
+            if full_path:
+                try:
+                    with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
+                        content = f.read()
+                        norm = normalize_log(content).splitlines()
+                        normalized_logs[filename] = {
+                            "tags": selected,
+                            "normalized": norm
+                        }
+                        print(f"✅ Log Assigned: {filename} → {selected}")
+                except Exception as e:
+                    print(f"Failed to read {filename}: {e}")
+
+    log_list.bind('<<ListboxSelect>>', on_log_select)
+
+    # Upload button
+    Button(files_frame, text="Upload Log(s)", command=upload_logs, width=20).pack(pady=5)
+
+    # Drag-and-drop label
+    dnd_label = tk.Label(files_frame, text="Drop log files here", relief="ridge", borderwidth=2, width=40, height=3)
+    dnd_label.pack(pady=10)
+
+    def check_clipboard_drop():
+        try:
+            clipboard = trainer_tab.clipboard_get()
+            if clipboard.endswith(".log") and clipboard not in log_list.get(0, tk.END):
+                filename = clipboard.split("/")[-1] if "/" in clipboard else clipboard.split("\\")[-1]
+                log_list.insert("end", filename)
+                selected_file_tags[filename] = []
+                print(f"🆕 Dropped: {filename}")
+        except:
+            pass
+        trainer_tab.after(1000, check_clipboard_drop)
+
+    # Confirm button
+    Button(tag_frame, text="Confirm Tags", command=confirm_tags, width=20).pack(pady=(10, 5))
+
+    # "Not Sure" block ---
+    not_sure_var = tk.BooleanVar()
+
+    not_sure_frame = Frame(tag_frame, bd=2, relief="groove")
+    not_sure_frame.pack(fill="x", pady=(15, 5), padx=2)
+
+    def update_not_sure_bg():
+        if not_sure_var.get():
+            not_sure_frame.configure(bg="#f5c6cb")
+            not_sure_cb.configure(bg="#f5c6cb")
+        else:
+            not_sure_frame.configure(bg=tag_frame["bg"])
+            not_sure_cb.configure(bg=tag_frame["bg"])
+
+    not_sure_cb = tk.Checkbutton(
+        not_sure_frame, text="Not Sure", variable=not_sure_var,
+        command=update_not_sure_bg, anchor="w", relief="flat"
+    )
+    not_sure_cb.pack(fill="x", padx=5)
+
+    tag_checks["Not Sure"] = not_sure_var
+
+    def export_dataset():
+        if not normalized_logs:
+            print("No logs processed yet.")
+            return
+
+        out_path = filedialog.asksaveasfilename(
+            defaultextension=".jsonl",
+            filetypes=[("JSON Lines", "*.jsonl")],
+            title="Save Dataset As"
+        )
+
+        if not out_path:
+            return
+
+        try:
+            with open(out_path, 'w', encoding='utf-8') as out_file:
+                for fname, data in normalized_logs.items():
+                    json.dump({
+                        "filename": fname,
+                        "tags": data["tags"],
+                        "normalized": data["normalized"]
+                    }, out_file)
+                    out_file.write("\n")
+            print(f"Dataset saved to {out_path}")
+        except Exception as e:
+            print(f"Failed to save dataset: {e}")
+    Button(trainer_tab, text="Export Dataset", command=export_dataset, width=25).pack(pady=(10, 5))
 
 def open_file():
     # print("open_file() is running")
@@ -328,7 +511,7 @@ def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines, mod
         Label(frame4, text="No placeholders found to graph.").pack()
 
 # Create main window
-root = tk.Tk()
+root = TkinterDnD.Tk()
 root.title("Multi-Log Viewer")
 root.geometry("1000x700")
 root.configure(bg='#A9B7C6')  # blue-grey
@@ -339,7 +522,7 @@ def on_closing():
 
 root.protocol("WM_DELETE_WINDOW", on_closing)
 
-#top-level tab layout
+# Top-level tab layout
 main_tabs = ttk.Notebook(root)
 main_tabs.pack(expand=1, fill="both")
 
@@ -347,19 +530,28 @@ main_tabs.pack(expand=1, fill="both")
 single_log_tab = ttk.Frame(main_tabs)
 main_tabs.add(single_log_tab, text="Single Log View")
 
-# Upload button inside Single Log View
 upload_btn = tk.Button(single_log_tab, text="Upload Log File", command=open_file)
 upload_btn.pack(pady=10)
 
-# Sub-tabs for individual logs
 tab_control = ttk.Notebook(single_log_tab)
 tab_control.pack(expand=1, fill="both")
 
 # Tab 2: Log Comparison
 compare_tab = ttk.Frame(main_tabs)
 main_tabs.add(compare_tab, text="Log Comparison")
-
-#Delta engine
 setup_log_comparison_tab(compare_tab)
 
-root.mainloop()
+# Tab 3: Smart Detector (empty)
+smart_tab = ttk.Frame(main_tabs)
+main_tabs.add(smart_tab, text="Smart Detector")
+
+# Tab 4: ML Trainer
+ml_trainer_tab = ttk.Frame(main_tabs)
+main_tabs.add(ml_trainer_tab, text="ML Trainer")
+setup_ml_trainer_tab(ml_trainer_tab)
+
+# Start app loop
+try:
+    root.mainloop()
+except tk.TclError:
+    pass

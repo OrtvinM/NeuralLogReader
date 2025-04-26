@@ -163,11 +163,19 @@ def setup_ml_trainer_tab(trainer_tab):
                     with open(full_path, 'r', encoding='utf-8', errors='replace') as f:
                         content = f.read()
                         norm = normalize_log(content).splitlines()
+
+                        tokenizer = LogTokenizer(max_length=20)
+                        tokenizer.fit(norm)
+                        sequences = tokenizer.transform(norm)
+                        sequences = sequences.tolist() 
+
                         normalized_logs[filename] = {
                             "tags": selected,
-                            "normalized": norm
+                            "normalized": norm,
+                            "tokenized": sequences
                         }
-                        print(f"✅ Log Assigned: {filename} → {selected}")
+                        print(f"Log Assigned: {filename} → {selected}")
+
                 except Exception as e:
                     print(f"Failed to read {filename}: {e}")
 
@@ -237,7 +245,8 @@ def setup_ml_trainer_tab(trainer_tab):
                     json.dump({
                         "filename": fname,
                         "tags": data["tags"],
-                        "normalized": data["normalized"]
+                        "normalized": data["normalized"],
+                        "tokenized": data["tokenized"]
                     }, out_file)
                     out_file.write("\n")
             print(f"Dataset saved to {out_path}")

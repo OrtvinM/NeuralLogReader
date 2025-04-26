@@ -7,6 +7,7 @@ from tkinter.scrolledtext import ScrolledText
 from normalise import normalize_log 
 from collections import Counter
 from tokenizer_pipeline import LogTokenizer
+from smart_detector import load_model, load_tokenizer, predict_log
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
@@ -64,6 +65,43 @@ def highlight_syntax(text_widget):
                     end_pos = f"{pos}+{len(token)}c"
                     text_widget.tag_add(tag, pos, end_pos)
                     start_idx = end_pos
+
+def setup_smart_detector_tab(smart_tab):
+    upload_button = tk.Button(smart_tab, text="Upload Log", command=detect_log)
+    upload_button.pack(pady=10)
+
+    result_label = tk.Label(smart_tab, text="Prediction will appear here.", font=("Arial", 12, 'bold'))
+    result_label.pack(pady=20)
+
+    smart_tab.result_label = result_label
+
+def detect_log():
+    try:
+        model = load_model()
+        tokenizer = load_tokenizer()
+    except Exception as e:
+        tk.messagebox.showerror("Error", f"Failed to load model/tokenizer: {e}")
+        return
+
+    file_path = filedialog.askopenfilename(filetypes=[("Log files", "*.log"), ("All files", "*.*")])
+    if not file_path:
+        return
+    with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
+        raw_content = f.read()
+    normalized_content = normalize_log(raw_content)
+    predicted_class, confidence = predict_log(normalized_content, model, tokenizer)
+    tag_options = [
+        "Crash on Launch", "Crash Midgame", "Startup Errors",
+        "Map Gen Error", "Minor Errors", "Graphical Bug", "Performance",
+        "Mod Conflict", "Other", "Clean Log"
+    ]
+    if predicted_class >= len(tag_options):
+        prediction_text = "Unknown"
+    else:
+        prediction_text = tag_options[predicted_class]
+    smart_tab.result_label.config(
+        text=f"Predicted: {prediction_text}\nConfidence: {confidence:.2%}"
+    )
 
 def setup_ml_trainer_tab(trainer_tab):
     import tkinter as tk
@@ -199,11 +237,9 @@ def setup_ml_trainer_tab(trainer_tab):
         except:
             pass
         trainer_tab.after(1000, check_clipboard_drop)
-
-    # Confirm button
     Button(tag_frame, text="Confirm Tags", command=confirm_tags, width=20).pack(pady=(10, 5))
 
-    # "Not Sure" block ---
+    # "Not Sure" 
     not_sure_var = tk.BooleanVar()
 
     not_sure_frame = Frame(tag_frame, bd=2, relief="groove")
@@ -240,15 +276,26 @@ def setup_ml_trainer_tab(trainer_tab):
             return
 
         try:
-            with open(out_path, 'w', encoding='utf-8') as out_file:
+            output_dir = filedialog.askdirectory(title="Select Folder to Export JSON Files")
+            if not output_dir:
+                return
+
+            try:
                 for fname, data in normalized_logs.items():
-                    json.dump({
-                        "filename": fname,
-                        "tags": data["tags"],
-                        "normalized": data["normalized"],
-                        "tokenized": data["tokenized"]
-                    }, out_file)
-                    out_file.write("\n")
+                    safe_name = os.path.splitext(fname)[0].replace(" ", "_").replace(".", "_") + ".json"
+                    output_path = os.path.join(output_dir, safe_name)
+
+                    with open(output_path, 'w', encoding='utf-8') as f_out:
+                        json.dump({
+                            "filename": fname,
+                            "tags": data["tags"],
+                            "normalized": data["normalized"],
+                            "tokenized": data["tokenized"]
+                        }, f_out, indent=2)
+
+                print(f"All logs exported individually to {output_dir}")
+            except Exception as e:
+                print(f"Failed to export: {e}")
             print(f"Dataset saved to {out_path}")
         except Exception as e:
             print(f"Failed to save dataset: {e}")
@@ -500,7 +547,7 @@ def create_insights_tab(normalized_lines, filename, sub_notebook, raw_lines, mod
             canvas2.draw()
             canvas2.get_tk_widget().pack(fill='both', expand=True)
 
-    # Bottom-right: Pie chart of placeholder counts
+    # Bottom-right: Pie chart
     frame4 = Frame(graph_tab, bd=2, relief='groove')
     frame4.grid(row=1, column=2, sticky='nsew', padx=5, pady=5)
     Label(frame4, text="Placeholder Distribution", font=("Arial", 12, 'bold')).pack()
@@ -550,9 +597,10 @@ compare_tab = ttk.Frame(main_tabs)
 main_tabs.add(compare_tab, text="Log Comparison")
 setup_log_comparison_tab(compare_tab)
 
-# Tab 3: Smart Detector (empty)
+# Tab 3: Smart Detector
 smart_tab = ttk.Frame(main_tabs)
 main_tabs.add(smart_tab, text="Smart Detector")
+setup_smart_detector_tab(smart_tab)
 
 # Tab 4: ML Trainer
 ml_trainer_tab = ttk.Frame(main_tabs)

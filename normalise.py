@@ -46,7 +46,6 @@ def normalize_log(content):
             normalized_lines.append("<mod_config_warning>")
             continue
 
-
         #apply general regex-based normalization
         line = raw_lower
         line = re.sub(r"/workshop/content/294100/(\d+)", r"/workshop/content/294100/<mod_id>", line)

@@ -2,7 +2,7 @@ from tkinterdnd2 import TkinterDnD
 import tkinter as tk
 import os
 import json
-from tkinter import filedialog, ttk, Toplevel, Label, Frame
+from tkinter import filedialog, ttk, Toplevel, Label, Frame, Button
 from tkinter.scrolledtext import ScrolledText
 from normalise import normalize_log 
 from collections import Counter
@@ -66,14 +66,48 @@ def highlight_syntax(text_widget):
                     text_widget.tag_add(tag, pos, end_pos)
                     start_idx = end_pos
 
-def setup_smart_detector_tab(smart_tab):
-    upload_button = tk.Button(smart_tab, text="Upload Log", command=detect_log)
-    upload_button.pack(pady=10)
+def setup_smart_detector_tab(tab):
+    # Split left and right frames
+    frame_left = Frame(tab, bd=2, relief='groove')
+    frame_left.pack(side='left', fill='both', expand=True, padx=10, pady=10)
 
-    result_label = tk.Label(smart_tab, text="Prediction will appear here.", font=("Arial", 12, 'bold'))
-    result_label.pack(pady=20)
+    frame_right = Frame(tab, bd=2, relief='groove')
+    frame_right.pack(side='right', fill='both', expand=True, padx=10, pady=10)
 
-    smart_tab.result_label = result_label
+    # Left listbox
+    Label(frame_left, text="Predictions", font=("Arial", 12, 'bold')).pack(anchor='w')
+    tab.left_listbox = tk.Listbox(frame_left, font=("Arial", 11))
+    tab.left_listbox.pack(expand=True, fill='both')
+
+    # Upload button
+    tab.detect_button = Button(frame_left, text="Detect Log", command=detect_log, font=("Arial", 11))
+    tab.detect_button.pack(pady=10)
+
+    # Right pie chart area
+    Label(frame_right, text="Prediction Distribution", font=("Arial", 12, 'bold')).pack(anchor='w')
+    tab.right_canvas_frame = Frame(frame_right)
+    tab.right_canvas_frame.pack(expand=True, fill='both')
+
+def draw_pie_chart(results):
+    # Clear old chart
+    for widget in smart_tab.right_canvas_frame.winfo_children():
+        widget.destroy()
+
+    # Create new pie chart
+    labels = [tag for tag, prob in results if prob > 0.01]  # Only show >1% probs
+    sizes = [prob for tag, prob in results if prob > 0.01]
+
+    if not sizes:
+        Label(smart_tab.right_canvas_frame, text="No significant predictions.").pack()
+        return
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=140)
+    ax.axis('equal')
+
+    pie_canvas = FigureCanvasTkAgg(fig, master=smart_tab.right_canvas_frame)
+    pie_canvas.draw()
+    pie_canvas.get_tk_widget().pack(fill='both', expand=True)
 
 def detect_log():
     try:
@@ -86,22 +120,29 @@ def detect_log():
     file_path = filedialog.askopenfilename(filetypes=[("Log files", "*.log"), ("All files", "*.*")])
     if not file_path:
         return
+
     with open(file_path, "r", encoding="utf-8-sig", errors="replace") as f:
         raw_content = f.read()
-    normalized_content = normalize_log(raw_content)
-    predicted_class, confidence = predict_log(normalized_content, model, tokenizer)
+
+    probs = predict_log(raw_content, model, tokenizer)
+    if probs is None:
+        tk.messagebox.showerror("Error", "Log file could not be processed.")
+        return
+
     tag_options = [
         "Crash on Launch", "Crash Midgame", "Startup Errors",
         "Map Gen Error", "Minor Errors", "Graphical Bug", "Performance",
         "Mod Conflict", "Other", "Clean Log"
     ]
-    if predicted_class >= len(tag_options):
-        prediction_text = "Unknown"
-    else:
-        prediction_text = tag_options[predicted_class]
-    smart_tab.result_label.config(
-        text=f"Predicted: {prediction_text}\nConfidence: {confidence:.2%}"
-    )
+
+    results = list(zip(tag_options, probs))
+    results.sort(key=lambda x: x[1], reverse=True)
+
+    # Update listbox
+    smart_tab.left_listbox.delete(0, tk.END)
+    for tag, prob in results:
+        smart_tab.left_listbox.insert(tk.END, f"{tag} ({prob:.2%})")
+    draw_pie_chart(results)
 
 def setup_ml_trainer_tab(trainer_tab):
     import tkinter as tk

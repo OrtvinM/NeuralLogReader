@@ -3,6 +3,8 @@ import tensorflow as tf
 import pickle
 import numpy as np
 from tokenizer_pipeline import LogTokenizer
+from normalise import normalize_log
+
 # Paths
 MODEL_PATH = "datasets/smart_detector_model.h5"
 TOKENIZER_PATH = "datasets/tokenizer.pkl"
@@ -18,14 +20,17 @@ def load_model(path=MODEL_PATH):
     return tf.keras.models.load_model(path)
 
 # Predict function
-def predict_log(log_text, model, tokenizer, max_length=20):
-    lines = log_text.split("\n")
-    sequences = tokenizer.transform(lines)
-    predictions = model.predict(sequences, verbose=0)
+def predict_log(content, model, tokenizer):
+    normalized = normalize_log(content)
+    lines = normalized.splitlines()
+    lines = [line for line in lines if line.strip()]
+    if not lines:
+        return None
 
-    # average prediction over all lines
-    avg_prediction = np.mean(predictions, axis=0)
-    predicted_class = np.argmax(avg_prediction)
-    confidence = np.max(avg_prediction)
+    tokenizer.fit(lines)
+    tokenized = tokenizer.transform(lines)
 
-    return predicted_class, confidence
+    prediction = model.predict(tokenized)
+    avg_prediction = prediction.mean(axis=0)
+
+    return avg_prediction 
